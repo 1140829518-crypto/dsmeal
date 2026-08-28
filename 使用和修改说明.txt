@@ -1,0 +1,40 @@
+想吃点啥？100道双人版
+
+目录：
+index.html = 页面结构
+style.css = UI设计
+app.js = 功能和Supabase同步
+data/recipes.json = 100道菜数据（以后主要改这里）
+images/ = 菜品图片，001.webp～100.webp
+
+【添加/修改菜】
+直接编辑 data/recipes.json。id 不要重复、不要随意改已有菜的 id。
+图片按菜的 id 命名，例如 id=13 → images/013.webp。
+
+【双人同步】
+1. 创建 Supabase 项目。
+2. SQL Editor 执行 supabase-setup.sql。
+3. 打开 app.js，把：
+   PASTE_SUPABASE_URL_HERE
+   PASTE_SUPABASE_PUBLISHABLE_KEY_HERE
+   替换成自己的 Project URL 和 Publishable/anon key。
+   不要使用 service_role key。
+4. 上传整个文件夹到静态网站。
+5. 两台手机点右上角同步状态，输入同一个家庭码。
+
+【UI怎么改】
+主要改 style.css：
+.hero = 顶部蓝色区域
+.card = 菜谱卡片
+.pic = 菜图
+.nav = 底部三个导航
+.modal = 菜谱详情弹窗
+.primary = 主要按钮
+想换颜色，搜索 #4d9bd4 / #54a5dd 即可。
+
+【菜图】
+当前不放假图片。没有图片会自动显示 🍳。
+准备真实菜图后放 images/001.webp ～ 100.webp。
+推荐 800×600、4:3、WebP、每张100～300KB。
+
+注意：100道菜的名称/分类已经完整录入；当前步骤文字是“可运行的基础模板”，不是每道菜精细烹饪配方。正式长期使用前，建议逐道完善用量与步骤。
