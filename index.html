@@ -13,7 +13,9 @@
 <header class="hero">
   <div class="heroin">
     <div class="head">
-      <div class="avatar">👩‍🍳</div>
+      <button class="avatar" id="avatarBtn" type="button" onclick="openAvatarEditor()" aria-label="更换头像">
+        <span id="avatarContent">👩‍🍳</span>
+      </button>
       <div><h1>想吃点啥？</h1><p>两个人，也要好好吃饭</p></div>
       <button class="sync" id="sync" onclick="openSetup()">未设置共享码</button>
     </div>
@@ -93,12 +95,16 @@
     <div class="photo-editor">
       <div id="photoPreview" class="photo-preview">📷</div>
       <label class="photo-button">
-        选择/拍摄照片
-        <input id="recipePhoto" type="file" accept="image/*" capture="environment">
+        📷 拍照
+        <input id="recipeCamera" type="file" accept="image/*" capture="environment">
+      </label>
+      <label class="photo-button">
+        🖼️ 相册选择
+        <input id="recipeGallery" type="file" accept="image/*">
       </label>
       <button class="plain-button" type="button" onclick="removeFormPhoto()">移除照片</button>
     </div>
-    <p class="help">iPhone 点“选择/拍摄照片”可以直接拍照或从相册选。照片会上传到你自己的 Supabase Storage，两台手机同步。</p>
+    <p class="help">“拍照”会打开相机；“相册选择”会从手机照片里选。保存后上传到 Supabase Storage，两台手机同步。</p>
 
     <label class="field">菜名<input id="formName" placeholder="例如：蒜香鸡翅"></label>
     <div class="two-col">
@@ -134,6 +140,25 @@
     <button class="primary full" id="saveRecipeBtn" onclick="saveRecipeForm()">保存并同步</button>
   </section>
 </div>
+
+<div class="overlay" id="avatarOv">
+  <section class="modal avatar-modal">
+    <button class="close" onclick="closeOv('avatarOv')">×</button>
+    <h2>🖼️ 更换头像</h2>
+    <div id="avatarPreview" class="avatar-preview">👩‍🍳</div>
+    <div class="avatar-actions">
+      <label class="photo-button">📷 拍照
+        <input id="avatarCamera" type="file" accept="image/*" capture="user">
+      </label>
+      <label class="photo-button">🖼️ 相册选择
+        <input id="avatarGallery" type="file" accept="image/*">
+      </label>
+      <button class="plain-button" type="button" onclick="resetAvatar()">恢复厨师头像</button>
+    </div>
+    <p class="help">头像保存到同一个共享码，两台手机都会看到。</p>
+  </section>
+</div>
+
 </div>
 
 <script src="./app.js"></script>

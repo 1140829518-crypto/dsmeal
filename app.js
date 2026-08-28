@@ -1,6 +1,7 @@
 let baseRecipes=[], customRecipes=[], overrides=[], recipes=[];
 let category='推荐', meat='全部', keyword='', menu=[], likes=[];
 let comboN=3, formMode='add', formRecipeKey=null, formPhotoFile=null, formPhotoUrl='';
+let sharedAvatarUrl='';
 
 const $=s=>document.querySelector(s);
 const SUPABASE_URL='https://jkfzokddawrqyjhnvzfh.supabase.co';
@@ -47,11 +48,15 @@ async function init(){
   baseRecipes=(await fetch('./data/recipes.json').then(r=>r.json())).map(r=>({...r,source:'base'}));
   rebuildRecipes(); render();
   if(room&&cloudReady){await loadCloudAll(); subscribeAll();}
-  $('#recipePhoto').addEventListener('change',onPhotoSelected);
+  $('#recipeCamera')?.addEventListener('change',onPhotoSelected);
+  $('#recipeGallery')?.addEventListener('change',onPhotoSelected);
+  $('#avatarCamera')?.addEventListener('change',onAvatarSelected);
+  $('#avatarGallery')?.addEventListener('change',onAvatarSelected);
+  renderAvatar();
 }
 
 async function loadCloudAll(){
-  await Promise.all([loadMenu(false),loadLikes(false),loadCustom(false),loadOverrides(false)]);
+  await Promise.all([loadMenu(false),loadLikes(false),loadCustom(false),loadOverrides(false),loadAvatar(false)]);
   rebuildRecipes(); render();
 }
 
@@ -204,7 +209,7 @@ function resetRecipeForm(){
   formMode='add'; formRecipeKey=null; formPhotoFile=null; formPhotoUrl='';
   $('#formTitle').textContent='＋ 添加菜谱'; $('#formName').value=''; $('#formCategory').value='炒菜'; $('#formMeat').value='猪肉';
   $('#formTime').value='20分钟'; $('#formDifficulty').value='简单'; $('#formIngredients').value=''; $('#formSeasonings').value=''; $('#formSteps').value='';
-  $('#recipePhoto').value=''; renderPhotoPreview();
+  if($('#recipeCamera')) $('#recipeCamera').value=''; if($('#recipeGallery')) $('#recipeGallery').value=''; renderPhotoPreview();
 }
 
 function openRecipeForm(k=null){
@@ -230,7 +235,7 @@ function renderPhotoPreview(){
   box.textContent='📷';
 }
 function onPhotoSelected(e){formPhotoFile=e.target.files?.[0]||null;renderPhotoPreview()}
-function removeFormPhoto(){formPhotoFile=null;formPhotoUrl='';$('#recipePhoto').value='';renderPhotoPreview()}
+function removeFormPhoto(){formPhotoFile=null;formPhotoUrl='';if($('#recipeCamera'))$('#recipeCamera').value='';if($('#recipeGallery'))$('#recipeGallery').value='';renderPhotoPreview()}
 
 function parseLineItems(text){
   return text.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
@@ -252,11 +257,58 @@ async function compressPhoto(file){
 
 async function uploadPhoto(file){
   if(!file)return formPhotoUrl||'';
+  return uploadImageFile(file,'recipes');
+}
+
+
+function renderAvatar(){
+  const box=$('#avatarContent');
+  const preview=$('#avatarPreview');
+  const content=sharedAvatarUrl?`<img src="${sharedAvatarUrl}" alt="头像">`:'👩‍🍳';
+  if(box) box.innerHTML=content;
+  if(preview) preview.innerHTML=content;
+}
+async function loadAvatar(doRender=true){
+  if(!cloudReady||!room)return;
+  const {data,error}=await cloud.from('app_profile').select('avatar_url').eq('room_code',room).maybeSingle();
+  if(error){console.error(error);return}
+  sharedAvatarUrl=data?.avatar_url||'';
+  if(doRender)renderAvatar();
+}
+function openAvatarEditor(){
+  if(!room){openSetup();return}
+  renderAvatar(); show('avatarOv');
+}
+async function uploadImageFile(file,folder='recipes'){
   const blob=await compressPhoto(file);
-  const path=`${room}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const path=`${room}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
   const {error}=await cloud.storage.from('recipe-images').upload(path,blob,{contentType:'image/jpeg',upsert:false});
   if(error)throw error;
   return cloud.storage.from('recipe-images').getPublicUrl(path).data.publicUrl;
+}
+async function onAvatarSelected(e){
+  const file=e.target.files?.[0]; if(!file)return;
+  try{
+    $('#avatarPreview').textContent='上传中…';
+    const url=await uploadImageFile(file,'avatar');
+    const {error}=await cloud.from('app_profile').upsert(
+      {room_code:room,avatar_url:url,updated_at:new Date().toISOString()},
+      {onConflict:'room_code'}
+    );
+    if(error)throw error;
+    sharedAvatarUrl=url; renderAvatar(); closeOv('avatarOv');
+    alert('头像已保存，两台手机都会同步');
+  }catch(err){console.error(err);renderAvatar();alert('头像保存失败：'+(err.message||err))}
+  finally{e.target.value=''}
+}
+async function resetAvatar(){
+  if(!confirm('恢复默认厨师头像吗？'))return;
+  const {error}=await cloud.from('app_profile').upsert(
+    {room_code:room,avatar_url:null,updated_at:new Date().toISOString()},
+    {onConflict:'room_code'}
+  );
+  if(error)return alert('恢复失败：'+error.message);
+  sharedAvatarUrl=''; renderAvatar(); closeOv('avatarOv');
 }
 
 async function saveRecipeForm(){
@@ -311,6 +363,7 @@ function subscribeAll(){
     .on('postgres_changes',{event:'*',schema:'public',table:'recipe_likes',filter:'room_code=eq.'+room},()=>loadLikes())
     .on('postgres_changes',{event:'*',schema:'public',table:'custom_recipes',filter:'room_code=eq.'+room},()=>loadCustom())
     .on('postgres_changes',{event:'*',schema:'public',table:'recipe_overrides',filter:'room_code=eq.'+room},()=>loadOverrides())
+    .on('postgres_changes',{event:'*',schema:'public',table:'app_profile',filter:'room_code=eq.'+room},()=>loadAvatar())
     .subscribe();
 }
 
