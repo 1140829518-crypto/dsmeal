@@ -1,6 +1,6 @@
-let baseRecipes=[], customRecipes=[], recipes=[];
+let baseRecipes=[], customRecipes=[], overrides=[], recipes=[];
 let category='推荐', meat='全部', keyword='', menu=[], likes=[];
-let comboN=3;
+let comboN=3, formMode='add', formRecipeKey=null, formPhotoFile=null, formPhotoUrl='';
 
 const $=s=>document.querySelector(s);
 const SUPABASE_URL='https://jkfzokddawrqyjhnvzfh.supabase.co';
@@ -16,24 +16,43 @@ const cats=['推荐','炒菜','炖煮','蒸菜','凉拌','煎炸','汤'];
 const meats=['全部','猪肉','牛肉','鸡肉','排骨','鱼虾','鸡蛋','素菜','汤','其他'];
 
 function otherRole(){return myRole==='A'?'B':'A'}
-function keyFor(r){return r.source==='custom' ? 1000000+Number(r.cloud_id) : Number(r.id)}
+function keyFor(r){return r.source==='custom'?1000000+Number(r.cloud_id):Number(r.id)}
 function recipeByKey(id){return recipes.find(r=>keyFor(r)===Number(id))}
-function rebuildRecipes(){recipes=[...baseRecipes,...customRecipes]}
+function overrideFor(id){return overrides.find(o=>Number(o.recipe_id)===Number(id))}
+
+function applyOverride(r){
+  const o=overrideFor(r.id);
+  if(!o)return {...r,source:'base'};
+  return {
+    ...r,
+    source:'base',
+    name:o.name??r.name,
+    category:o.category??r.category,
+    meat:o.meat??r.meat,
+    time:o.time_text??r.time,
+    difficulty:o.difficulty??r.difficulty,
+    ingredients:o.ingredients??r.ingredients,
+    seasonings:o.seasonings??r.seasonings,
+    steps:o.steps??r.steps,
+    image_url:o.image_url||'',
+    deleted:!!o.deleted
+  };
+}
+
+function rebuildRecipes(){
+  recipes=[...baseRecipes.map(applyOverride).filter(r=>!r.deleted),...customRecipes];
+}
 
 async function init(){
   baseRecipes=(await fetch('./data/recipes.json').then(r=>r.json())).map(r=>({...r,source:'base'}));
-  rebuildRecipes();
-  render();
-  if(room&&cloudReady){
-    await loadCloudAll();
-    subscribeAll();
-  }
+  rebuildRecipes(); render();
+  if(room&&cloudReady){await loadCloudAll(); subscribeAll();}
+  $('#recipePhoto').addEventListener('change',onPhotoSelected);
 }
 
 async function loadCloudAll(){
-  await Promise.all([loadMenu(false),loadLikes(false),loadCustom(false)]);
-  rebuildRecipes();
-  render();
+  await Promise.all([loadMenu(false),loadLikes(false),loadCustom(false),loadOverrides(false)]);
+  rebuildRecipes(); render();
 }
 
 function list(){
@@ -45,18 +64,17 @@ function list(){
 }
 
 function img(r,cls='pic'){
-  if(r.source==='custom') return `<div class="${cls}">🍳</div>`;
-  return `<div class="${cls}"><img src="${r.image}" alt="${r.name}" onerror="this.remove();this.parentNode.textContent='🍳'"></div>`;
+  const url=r.image_url||r.image||'';
+  if(!url)return `<div class="${cls}">🍳</div>`;
+  return `<div class="${cls}"><img src="${url}" alt="${r.name}" onerror="this.remove();this.parentNode.textContent='🍳'"></div>`;
 }
-
-function isLiked(recipeKey,role){return likes.some(x=>Number(x.recipe_key)===Number(recipeKey)&&x.person_slot===role)}
-function inMenu(recipeKey){return menu.some(x=>Number(x.recipe_key)===Number(recipeKey))}
+function isLiked(k,role){return likes.some(x=>Number(x.recipe_key)===Number(k)&&x.person_slot===role)}
+function inMenu(k){return menu.some(x=>Number(x.recipe_key)===Number(k))}
 
 function render(){
   $('#cats').innerHTML=cats.map(x=>`<button class="pill ${x===category?'on':''}" data-c="${x}">${x}</button>`).join('');
   $('#meats').innerHTML=meats.map(x=>`<button class="pill ${x===meat?'on':''}" data-m="${x}">${x}</button>`).join('');
-  const a=list();
-  $('#count').textContent=a.length+' 道';
+  const a=list(); $('#count').textContent=a.length+' 道';
 
   $('#grid').innerHTML=a.map(r=>{
     const k=keyFor(r), mine=isLiked(k,myRole), theirs=isLiked(k,otherRole()), added=inMenu(k);
@@ -66,7 +84,7 @@ function render(){
         <div class="title-row">
           <div class="name" data-open="${k}">${r.name}</div>
           <div class="card-actions">
-            <button class="mini ${added?'menu-on':''}" data-menu="${k}" title="加入今日菜单">${added?'✓':'＋'}</button>
+            <button class="mini ${added?'menu-on':''}" data-menu="${k}" title="今日菜单">${added?'✓':'＋'}</button>
             <button class="mini ${mine?'star-on':''}" data-self="${k}" title="我喜欢">${mine?'⭐':'☆'}</button>
             <button class="mini ${theirs?'heart-on':''}" data-partner="${k}" title="TA喜欢">${theirs?'❤️':'♡'}</button>
           </div>
@@ -83,43 +101,30 @@ function render(){
   document.querySelectorAll('[data-menu]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleMenu(+b.dataset.menu)});
   document.querySelectorAll('[data-self]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleLike(+b.dataset.self,myRole)});
   document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleLike(+b.dataset.partner,otherRole())});
-
   $('#menubadge').textContent=menu.length;
   $('#sync').textContent=room?(cloudReady?`已同步✓ · ${myRole}`:'待配置云同步'):'未设置共享码';
 }
 
-function openRecipe(recipeKey){
-  const r=recipeByKey(recipeKey);
-  if(!r)return;
-  const mine=isLiked(recipeKey,myRole), theirs=isLiked(recipeKey,otherRole()), added=inMenu(recipeKey);
+function openRecipe(k){
+  const r=recipeByKey(k); if(!r)return;
+  const mine=isLiked(k,myRole), theirs=isLiked(k,otherRole()), added=inMenu(k);
   $('#detail').innerHTML=`
     <button class="close" onclick="closeOv('detailOv')">×</button>
     ${img(r,'detailpic')}
     <h2>${r.name}</h2>
-    <div class="tags">
-      <span>🕐 ${r.time||'20分钟'}</span>
-      <span>⭐ ${r.difficulty||'简单'}</span>
-      ${(r.tags||[]).map(x=>`<span>${x}</span>`).join('')}
-      ${r.source==='custom'?'<span>📱 手机添加</span>':''}
-    </div>
-
+    <div class="tags"><span>🕐 ${r.time||'20分钟'}</span><span>⭐ ${r.difficulty||'简单'}</span>${(r.tags||[]).map(x=>`<span>${x}</span>`).join('')}</div>
     <div class="detail-actions">
-      <button class="self" onclick="toggleLike(${recipeKey},myRole);setTimeout(()=>openRecipe(${recipeKey}),180)">${mine?'⭐ 我喜欢':'☆ 我喜欢'}</button>
-      <button class="partner" onclick="toggleLike(${recipeKey},otherRole());setTimeout(()=>openRecipe(${recipeKey}),180)">${theirs?'❤️ TA喜欢':'♡ TA喜欢'}</button>
-      <button class="menu" onclick="toggleMenu(${recipeKey});setTimeout(()=>openRecipe(${recipeKey}),180)">${added?'✓ 已加菜单':'＋ 加菜单'}</button>
+      <button class="self" onclick="toggleLike(${k},myRole);setTimeout(()=>openRecipe(${k}),180)">${mine?'⭐ 我喜欢':'☆ 我喜欢'}</button>
+      <button class="partner" onclick="toggleLike(${k},otherRole());setTimeout(()=>openRecipe(${k}),180)">${theirs?'❤️ TA喜欢':'♡ TA喜欢'}</button>
+      <button class="menu" onclick="toggleMenu(${k});setTimeout(()=>openRecipe(${k}),180)">${added?'✓ 已加菜单':'＋ 加菜单'}</button>
     </div>
-
-    <h3>🥩 食材</h3>
-    ${(r.ingredients||[]).map(x=>`<div class="line"><span>${x.name}</span><b>${x.amount||'适量'}</b></div>`).join('')}
-
-    <h3>🧂 调料</h3>
-    ${(r.seasonings||[]).map(x=>`<div class="line"><span>${x.name}</span><b>${x.amount||'适量'}</b></div>`).join('')}
-
-    <h3>👨‍🍳 做法</h3>
-    <ol class="steps">${(r.steps||[]).map((x,i)=>`<li><b>${i+1}</b><span><strong>${x.title||('步骤 '+(i+1))}</strong><br>${x.content||''}</span></li>`).join('')}</ol>
-
-    ${r.source==='custom'?`<button class="danger full" onclick="deleteCustomRecipe(${r.cloud_id})">删除这道自定义菜谱</button>`:''}
-  `;
+    <div class="detail-admin">
+      <button class="edit-btn" onclick="openRecipeForm(${k})">✏️ 编辑菜谱</button>
+      <button class="delete-btn" onclick="deleteRecipe(${k})">🗑 删除菜谱</button>
+    </div>
+    <h3>🥩 食材</h3>${(r.ingredients||[]).map(x=>`<div class="line"><span>${x.name}</span><b>${x.amount||'适量'}</b></div>`).join('')}
+    <h3>🧂 调料</h3>${(r.seasonings||[]).map(x=>`<div class="line"><span>${x.name}</span><b>${x.amount||'适量'}</b></div>`).join('')}
+    <h3>👨‍🍳 做法</h3><ol class="steps">${(r.steps||[]).map((x,i)=>`<li><b>${i+1}</b><span><strong>${x.title||('步骤 '+(i+1))}</strong><br>${x.content||''}</span></li>`).join('')}</ol>`;
   show('detailOv');
 }
 
@@ -127,81 +132,56 @@ function show(id){$('#'+id).classList.add('show')}
 function closeOv(id){$('#'+id).classList.remove('show')}
 
 function openSetup(){
-  $('#roomInput').value=room;
-  selectRole(myRole);
-  show('setupOv');
+  $('#roomInput').value=room; selectRole(myRole); show('setupOv');
 }
 function selectRole(role){
-  myRole=role;
-  $('#roleA')?.classList.toggle('on',role==='A');
-  $('#roleB')?.classList.toggle('on',role==='B');
+  myRole=role; $('#roleA')?.classList.toggle('on',role==='A'); $('#roleB')?.classList.toggle('on',role==='B');
 }
 function saveSetup(){
   let c=$('#roomInput').value.trim().replace(/[^a-zA-Z0-9_-]/g,'').slice(0,12);
   if(c.length<4)return alert('共享码至少4位');
-  localStorage.setItem('recipe-room',c);
-  localStorage.setItem('recipe-role',myRole);
-  location.reload();
+  localStorage.setItem('recipe-room',c); localStorage.setItem('recipe-role',myRole); location.reload();
 }
 
 async function loadMenu(doRender=true){
   if(!cloudReady||!room)return;
   const {data,error}=await cloud.from('shared_menu').select('recipe_id').eq('room_code',room).order('created_at');
   if(error){console.error(error);return}
-  menu=(data||[]).map(x=>({recipe_key:Number(x.recipe_id)}));
-  if(doRender)render();
+  menu=(data||[]).map(x=>({recipe_key:Number(x.recipe_id)})); if(doRender)render();
 }
-
-async function toggleMenu(recipeKey){
+async function toggleMenu(k){
   if(!room){openSetup();return}
-  if(!cloudReady)return alert('Supabase 未配置');
-  if(inMenu(recipeKey)){
-    await cloud.from('shared_menu').delete().eq('room_code',room).eq('recipe_id',recipeKey);
-  }else{
-    await cloud.from('shared_menu').insert({room_code:room,recipe_id:recipeKey});
-  }
+  if(inMenu(k))await cloud.from('shared_menu').delete().eq('room_code',room).eq('recipe_id',k);
+  else await cloud.from('shared_menu').insert({room_code:room,recipe_id:k});
   await loadMenu();
 }
-
-function openMenu(){
-  if(!menu.length){
-    $('#menuBody').innerHTML='<p class="help">今天还没选菜。</p>';
-    $('#clearMenuBtn').style.display='none';
-  }else{
-    $('#clearMenuBtn').style.display='block';
-    $('#menuBody').innerHTML=menu.map(m=>{
-      const r=recipeByKey(m.recipe_key);
-      return r?`<div class="line"><span>${r.name}</span><button onclick="toggleMenu(${m.recipe_key});setTimeout(openMenu,250)">移除</button></div>`:'';
-    }).join('');
-  }
-  show('menuOv');
-}
-
 async function clearMenu(){
-  if(!room||!cloudReady)return;
   if(!confirm('确定一键移除今日菜单里的全部菜吗？'))return;
-  await cloud.from('shared_menu').delete().eq('room_code',room);
-  await loadMenu();
-  openMenu();
+  await cloud.from('shared_menu').delete().eq('room_code',room); await loadMenu(); openMenu();
+}
+function openMenu(){
+  if(!menu.length){$('#menuBody').innerHTML='<p class="help">今天还没选菜。</p>';$('#clearMenuBtn').style.display='none'}
+  else{$('#clearMenuBtn').style.display='block';$('#menuBody').innerHTML=menu.map(m=>{const r=recipeByKey(m.recipe_key);return r?`<div class="line"><span>${r.name}</span><button onclick="toggleMenu(${m.recipe_key});setTimeout(openMenu,250)">移除</button></div>`:''}).join('')}
+  show('menuOv');
 }
 
 async function loadLikes(doRender=true){
   if(!cloudReady||!room)return;
   const {data,error}=await cloud.from('recipe_likes').select('recipe_id,person_slot').eq('room_code',room);
   if(error){console.error(error);return}
-  likes=(data||[]).map(x=>({recipe_key:Number(x.recipe_id),person_slot:x.person_slot}));
-  if(doRender)render();
+  likes=(data||[]).map(x=>({recipe_key:Number(x.recipe_id),person_slot:x.person_slot})); if(doRender)render();
+}
+async function toggleLike(k,role){
+  if(isLiked(k,role))await cloud.from('recipe_likes').delete().eq('room_code',room).eq('recipe_id',k).eq('person_slot',role);
+  else await cloud.from('recipe_likes').insert({room_code:room,recipe_id:k,person_slot:role});
+  await loadLikes();
 }
 
-async function toggleLike(recipeKey,role){
-  if(!room){openSetup();return}
-  if(!cloudReady)return alert('Supabase 未配置');
-  if(isLiked(recipeKey,role)){
-    await cloud.from('recipe_likes').delete().eq('room_code',room).eq('recipe_id',recipeKey).eq('person_slot',role);
-  }else{
-    await cloud.from('recipe_likes').insert({room_code:room,recipe_id:recipeKey,person_slot:role});
-  }
-  await loadLikes();
+async function loadOverrides(doRender=true){
+  if(!cloudReady||!room)return;
+  const {data,error}=await cloud.from('recipe_overrides').select('*').eq('room_code',room);
+  if(error){console.error(error);return}
+  overrides=data||[]; rebuildRecipes(); if(doRender)render();
 }
 
 async function loadCustom(doRender=true){
@@ -209,107 +189,141 @@ async function loadCustom(doRender=true){
   const {data,error}=await cloud.from('custom_recipes').select('*').eq('room_code',room).order('created_at');
   if(error){console.error(error);return}
   customRecipes=(data||[]).map(x=>({
-    id:1000000+Number(x.id),
-    cloud_id:Number(x.id),
-    source:'custom',
-    name:x.name,
-    category:x.category,
-    meat:x.meat,
-    time:x.time_text,
-    difficulty:x.difficulty,
-    ingredients:x.ingredients||[],
-    seasonings:x.seasonings||[],
-    steps:x.steps||[],
-    tags:['自定义','两人共享']
+    id:1000000+Number(x.id),cloud_id:Number(x.id),source:'custom',
+    name:x.name,category:x.category,meat:x.meat,time:x.time_text,difficulty:x.difficulty,
+    ingredients:x.ingredients||[],seasonings:x.seasonings||[],steps:x.steps||[],
+    image_url:x.image_url||'',tags:['自定义','两人共享']
   }));
-  rebuildRecipes();
-  if(doRender)render();
+  rebuildRecipes(); if(doRender)render();
 }
 
-function openAddRecipe(){
-  if(!room){openSetup();return}
-  show('addOv');
+function linesFromItems(arr){return (arr||[]).map(x=>`${x.name} ${x.amount||''}`.trim()).join('\n')}
+function linesFromSteps(arr){return (arr||[]).map(x=>x.content||'').join('\n')}
+
+function resetRecipeForm(){
+  formMode='add'; formRecipeKey=null; formPhotoFile=null; formPhotoUrl='';
+  $('#formTitle').textContent='＋ 添加菜谱'; $('#formName').value=''; $('#formCategory').value='炒菜'; $('#formMeat').value='猪肉';
+  $('#formTime').value='20分钟'; $('#formDifficulty').value='简单'; $('#formIngredients').value=''; $('#formSeasonings').value=''; $('#formSteps').value='';
+  $('#recipePhoto').value=''; renderPhotoPreview();
 }
+
+function openRecipeForm(k=null){
+  if(!room){openSetup();return}
+  resetRecipeForm();
+  if(k!==null){
+    const r=recipeByKey(k); if(!r)return;
+    formMode='edit'; formRecipeKey=k; formPhotoUrl=r.image_url||((r.source==='base'&&r.image)?r.image:'');
+    $('#formTitle').textContent='✏️ 编辑菜谱';
+    $('#formName').value=r.name||''; $('#formCategory').value=r.category||'炒菜'; $('#formMeat').value=r.meat||'其他';
+    $('#formTime').value=r.time||'20分钟'; $('#formDifficulty').value=r.difficulty||'简单';
+    $('#formIngredients').value=linesFromItems(r.ingredients); $('#formSeasonings').value=linesFromItems(r.seasonings); $('#formSteps').value=linesFromSteps(r.steps);
+    renderPhotoPreview();
+    closeOv('detailOv');
+  }
+  show('formOv');
+}
+
+function renderPhotoPreview(){
+  const box=$('#photoPreview');
+  if(formPhotoFile){const u=URL.createObjectURL(formPhotoFile);box.innerHTML=`<img src="${u}">`;return}
+  if(formPhotoUrl){box.innerHTML=`<img src="${formPhotoUrl}">`;return}
+  box.textContent='📷';
+}
+function onPhotoSelected(e){formPhotoFile=e.target.files?.[0]||null;renderPhotoPreview()}
+function removeFormPhoto(){formPhotoFile=null;formPhotoUrl='';$('#recipePhoto').value='';renderPhotoPreview()}
 
 function parseLineItems(text){
   return text.split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{
-    const m=line.match(/^(.+?)\s+([^\s].*)$/);
-    return m?{name:m[1].trim(),amount:m[2].trim()}:{name:line,amount:'适量'};
+    const m=line.match(/^(.+?)\s+([^\s].*)$/); return m?{name:m[1].trim(),amount:m[2].trim()}:{name:line,amount:'适量'};
   });
 }
+function parseSteps(text){return text.split('\n').map(x=>x.trim()).filter(Boolean).map((line,i)=>({title:'步骤 '+(i+1),content:line}))}
 
-function parseSteps(text){
-  return text.split('\n').map(x=>x.trim()).filter(Boolean).map((line,i)=>({title:'步骤 '+(i+1),content:line}));
+async function compressPhoto(file){
+  try{
+    const dataUrl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(file)});
+    const im=await new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=rej;img.src=dataUrl});
+    const max=1200, scale=Math.min(1,max/im.width), w=Math.round(im.width*scale), h=Math.round(im.height*scale);
+    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);
+    const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.82));
+    return blob||file;
+  }catch(e){return file}
 }
 
-async function saveCustomRecipe(){
-  if(!cloudReady||!room)return alert('请先完成双人同步设置');
-  const name=$('#newName').value.trim();
-  if(!name)return alert('先填写菜名');
-
-  const payload={
-    room_code:room,
-    name,
-    category:$('#newCategory').value,
-    meat:$('#newMeat').value,
-    time_text:$('#newTime').value.trim()||'20分钟',
-    difficulty:$('#newDifficulty').value,
-    ingredients:parseLineItems($('#newIngredients').value),
-    seasonings:parseLineItems($('#newSeasonings').value),
-    steps:parseSteps($('#newSteps').value),
-    created_by:myRole
-  };
-
-  const {error}=await cloud.from('custom_recipes').insert(payload);
-  if(error){console.error(error);return alert('保存失败：'+error.message)}
-
-  $('#newName').value='';
-  $('#newIngredients').value='';
-  $('#newSeasonings').value='';
-  $('#newSteps').value='';
-  closeOv('addOv');
-  await loadCustom();
-  alert('保存成功，两台手机都会看到');
+async function uploadPhoto(file){
+  if(!file)return formPhotoUrl||'';
+  const blob=await compressPhoto(file);
+  const path=`${room}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const {error}=await cloud.storage.from('recipe-images').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+  if(error)throw error;
+  return cloud.storage.from('recipe-images').getPublicUrl(path).data.publicUrl;
 }
 
-async function deleteCustomRecipe(cloudId){
-  if(!confirm('确定删除这道自定义菜谱吗？两台手机都会删除。'))return;
-  const recipeKey=1000000+Number(cloudId);
-  await cloud.from('shared_menu').delete().eq('room_code',room).eq('recipe_id',recipeKey);
-  await cloud.from('recipe_likes').delete().eq('room_code',room).eq('recipe_id',recipeKey);
-  await cloud.from('custom_recipes').delete().eq('room_code',room).eq('id',cloudId);
-  closeOv('detailOv');
-  await loadCloudAll();
+async function saveRecipeForm(){
+  const btn=$('#saveRecipeBtn'); btn.classList.add('saving'); btn.textContent='正在保存…';
+  try{
+    const name=$('#formName').value.trim(); if(!name)throw new Error('请填写菜名');
+    const imageUrl=await uploadPhoto(formPhotoFile);
+    const data={
+      name,category:$('#formCategory').value,meat:$('#formMeat').value,
+      time_text:$('#formTime').value.trim()||'20分钟',difficulty:$('#formDifficulty').value,
+      ingredients:parseLineItems($('#formIngredients').value),seasonings:parseLineItems($('#formSeasonings').value),
+      steps:parseSteps($('#formSteps').value),image_url:imageUrl||null
+    };
+    if(formMode==='add'){
+      const {error}=await cloud.from('custom_recipes').insert({room_code:room,...data,created_by:myRole});
+      if(error)throw error;
+      await loadCustom();
+    }else{
+      const r=recipeByKey(formRecipeKey);
+      if(r.source==='custom'){
+        const {error}=await cloud.from('custom_recipes').update(data).eq('room_code',room).eq('id',r.cloud_id);
+        if(error)throw error; await loadCustom();
+      }else{
+        const payload={room_code:room,recipe_id:r.id,...data,deleted:false};
+        const {error}=await cloud.from('recipe_overrides').upsert(payload,{onConflict:'room_code,recipe_id'});
+        if(error)throw error; await loadOverrides();
+      }
+    }
+    closeOv('formOv'); alert('保存成功，两台手机都会同步');
+  }catch(e){console.error(e);alert('保存失败：'+(e.message||e))}
+  finally{btn.classList.remove('saving');btn.textContent='保存并同步'}
+}
+
+async function deleteRecipe(k){
+  const r=recipeByKey(k); if(!r)return;
+  if(!confirm(`确定删除“${r.name}”吗？两台手机都会看不到。`))return;
+  await cloud.from('shared_menu').delete().eq('room_code',room).eq('recipe_id',k);
+  await cloud.from('recipe_likes').delete().eq('room_code',room).eq('recipe_id',k);
+  if(r.source==='custom'){
+    const {error}=await cloud.from('custom_recipes').delete().eq('room_code',room).eq('id',r.cloud_id); if(error)return alert(error.message);
+    await loadCustom(false);
+  }else{
+    const {error}=await cloud.from('recipe_overrides').upsert({room_code:room,recipe_id:r.id,deleted:true},{onConflict:'room_code,recipe_id'});
+    if(error)return alert(error.message); await loadOverrides(false);
+  }
+  await Promise.all([loadMenu(false),loadLikes(false)]); rebuildRecipes();render();closeOv('detailOv');
 }
 
 function subscribeAll(){
-  cloud.channel('room-'+room)
+  cloud.channel('room-v2-'+room)
     .on('postgres_changes',{event:'*',schema:'public',table:'shared_menu',filter:'room_code=eq.'+room},()=>loadMenu())
     .on('postgres_changes',{event:'*',schema:'public',table:'recipe_likes',filter:'room_code=eq.'+room},()=>loadLikes())
     .on('postgres_changes',{event:'*',schema:'public',table:'custom_recipes',filter:'room_code=eq.'+room},()=>loadCustom())
+    .on('postgres_changes',{event:'*',schema:'public',table:'recipe_overrides',filter:'room_code=eq.'+room},()=>loadOverrides())
     .subscribe();
 }
 
 function chooser(){show('chooseOv');makeCombo()}
-
 function makeCombo(){
-  let mains=recipes.filter(r=>r.category!=='汤');
-  let soups=recipes.filter(r=>r.category==='汤');
-  let pool=[...mains].sort(()=>Math.random()-.5);
-  let out=comboN===4?[...pool.slice(0,3),soups[Math.floor(Math.random()*soups.length)]]:pool.slice(0,comboN);
-  out=out.filter(Boolean);
-  $('#combo').innerHTML=out.map(r=>`<div>🍽️ <b>${r.name}</b> · ${r.time||'20分钟'}</div>`).join('');
-  $('#combo').dataset.ids=out.map(keyFor).join(',');
+  const mains=recipes.filter(r=>r.category!=='汤'),soups=recipes.filter(r=>r.category==='汤'),pool=[...mains].sort(()=>Math.random()-.5);
+  let out=comboN===4?[...pool.slice(0,3),soups[Math.floor(Math.random()*soups.length)]]:pool.slice(0,comboN);out=out.filter(Boolean);
+  $('#combo').innerHTML=out.map(r=>`<div>🍽️ <b>${r.name}</b> · ${r.time||'20分钟'}</div>`).join('');$('#combo').dataset.ids=out.map(keyFor).join(',');
 }
-
 async function addCombo(){
-  if(!room){openSetup();return}
   const ids=($('#combo').dataset.ids||'').split(',').filter(Boolean).map(Number);
-  for(const id of ids){
-    if(!inMenu(id))await cloud.from('shared_menu').insert({room_code:room,recipe_id:id});
-  }
-  await loadMenu();
-  closeOv('chooseOv');
+  for(const id of ids)if(!inMenu(id))await cloud.from('shared_menu').insert({room_code:room,recipe_id:id});
+  await loadMenu();closeOv('chooseOv');
 }
 
 $('#search').oninput=e=>{keyword=e.target.value.trim();render()};

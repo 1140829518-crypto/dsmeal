@@ -1,147 +1,139 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#54a5dd">
-  <title>想吃点啥？</title>
-  <link rel="stylesheet" href="./style.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#54a5dd">
+<title>想吃点啥？</title>
+<link rel="stylesheet" href="./style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="app">
-  <header class="hero">
-    <div class="heroin">
-      <div class="head">
-        <div class="avatar">👩‍🍳</div>
-        <div>
-          <h1>想吃点啥？</h1>
-          <p>两个人，也要好好吃饭</p>
-        </div>
-        <button class="sync" id="sync" onclick="openSetup()">未设置共享码</button>
-      </div>
-      <div class="search">🔎<input id="search" placeholder="搜索菜名或食材…"></div>
+<header class="hero">
+  <div class="heroin">
+    <div class="head">
+      <div class="avatar">👩‍🍳</div>
+      <div><h1>想吃点啥？</h1><p>两个人，也要好好吃饭</p></div>
+      <button class="sync" id="sync" onclick="openSetup()">未设置共享码</button>
     </div>
-  </header>
+    <div class="search">🔎<input id="search" placeholder="搜索菜名或食材…"></div>
+  </div>
+</header>
 
-  <section class="filters">
-    <div class="wrap filter-wrap">
-      <div class="row" id="cats"></div>
-      <div class="row" id="meats"></div>
-    </div>
+<section class="filters">
+  <div class="wrap filter-wrap">
+    <div class="row" id="cats"></div>
+    <div class="row" id="meats"></div>
+  </div>
+</section>
+
+<main class="wrap">
+  <div class="sectionhead">
+    <h2>今天吃什么</h2><span id="count"></span>
+    <button class="add-recipe-top" onclick="openRecipeForm()">＋ 添加菜谱</button>
+  </div>
+  <div class="legend">⭐ 我喜欢　❤️ TA喜欢</div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<nav class="nav">
+  <button onclick="window.scrollTo({top:0,behavior:'smooth'})"><b>⌂</b>菜谱</button>
+  <button onclick="chooser()"><b>🎲</b>吃什么</button>
+  <button onclick="openMenu()"><span class="badge" id="menubadge">0</span><b>🍽️</b>今日菜单</button>
+</nav>
+
+<div class="overlay" id="detailOv"><section class="modal" id="detail"></section></div>
+
+<div class="overlay" id="menuOv">
+  <section class="modal">
+    <button class="close" onclick="closeOv('menuOv')">×</button>
+    <h2>🍽️ 今日菜单</h2>
+    <div id="menuBody"></div>
+    <button id="clearMenuBtn" class="danger full" onclick="clearMenu()">一键移除全部</button>
   </section>
+</div>
 
-  <main class="wrap">
-    <div class="sectionhead">
-      <h2>今天吃什么</h2>
-      <span id="count"></span>
-      <button class="add-recipe-top" onclick="openAddRecipe()">＋ 添加菜谱</button>
+<div class="overlay" id="chooseOv">
+  <section class="modal chooser">
+    <button class="close" onclick="closeOv('chooseOv')">×</button>
+    <h2>🎲 帮我选今晚吃什么</h2>
+    <p>适合两个人的家常搭配</p>
+    <div class="choices">
+      <button onclick="comboN=2;makeCombo()">2菜</button>
+      <button onclick="comboN=3;makeCombo()">3菜</button>
+      <button onclick="comboN=4;makeCombo()">3菜1汤</button>
     </div>
-    <div class="legend">⭐ 我喜欢　❤️ TA喜欢　＋ 加今日菜单</div>
-    <div class="grid" id="grid"></div>
-  </main>
+    <div class="result" id="combo"></div>
+    <button class="primary" onclick="makeCombo()">🔄 换一组</button>
+    <button class="primary" onclick="addCombo()">✓ 加入今日菜单</button>
+  </section>
+</div>
 
-  <nav class="nav">
-    <button onclick="window.scrollTo({top:0,behavior:'smooth'})"><b>⌂</b>菜谱</button>
-    <button onclick="chooser()"><b>🎲</b>吃什么</button>
-    <button onclick="openMenu()"><span class="badge" id="menubadge">0</span><b>🍽️</b>今日菜单</button>
-  </nav>
+<div class="overlay" id="setupOv">
+  <section class="modal">
+    <button class="close" onclick="closeOv('setupOv')">×</button>
+    <h2>👫 双人设置</h2>
+    <label class="field">共享码<input id="roomInput" placeholder="两台手机填一样，例如 5288"></label>
+    <div class="role-box">
+      <b>这台手机是谁？</b>
+      <button id="roleA" onclick="selectRole('A')">我是 A</button>
+      <button id="roleB" onclick="selectRole('B')">我是 B</button>
+    </div>
+    <p class="help">⭐ 是自己的喜欢，❤️ 是另一位喜欢；两台手机都会同步。</p>
+    <button class="primary full" onclick="saveSetup()">保存设置</button>
+  </section>
+</div>
 
-  <div class="overlay" id="detailOv">
-    <section class="modal" id="detail"></section>
-  </div>
+<div class="overlay" id="formOv">
+  <section class="modal add-modal">
+    <button class="close" onclick="closeOv('formOv')">×</button>
+    <h2 id="formTitle">＋ 添加菜谱</h2>
 
-  <div class="overlay" id="menuOv">
-    <section class="modal">
-      <button class="close" onclick="closeOv('menuOv')">×</button>
-      <h2>🍽️ 今日菜单</h2>
-      <div id="menuBody"></div>
-      <button id="clearMenuBtn" class="danger full" onclick="clearMenu()">一键移除全部</button>
-    </section>
-  </div>
-
-  <div class="overlay" id="chooseOv">
-    <section class="modal chooser">
-      <button class="close" onclick="closeOv('chooseOv')">×</button>
-      <h2>🎲 帮我选今晚吃什么</h2>
-      <p>适合两个人的家常搭配</p>
-      <div class="choices">
-        <button onclick="comboN=2;makeCombo()">2菜</button>
-        <button onclick="comboN=3;makeCombo()">3菜</button>
-        <button onclick="comboN=4;makeCombo()">3菜1汤</button>
-      </div>
-      <div class="result" id="combo"></div>
-      <button class="primary" onclick="makeCombo()">🔄 换一组</button>
-      <button class="primary" onclick="addCombo()">✓ 加入今日菜单</button>
-    </section>
-  </div>
-
-  <div class="overlay" id="setupOv">
-    <section class="modal">
-      <button class="close" onclick="closeOv('setupOv')">×</button>
-      <h2>👫 双人设置</h2>
-      <label class="field">共享码
-        <input id="roomInput" placeholder="两台手机填一样，例如 5288">
+    <div class="photo-editor">
+      <div id="photoPreview" class="photo-preview">📷</div>
+      <label class="photo-button">
+        选择/拍摄照片
+        <input id="recipePhoto" type="file" accept="image/*" capture="environment">
       </label>
-      <p class="help">两台手机继续使用同一个共享码。</p>
-      <div class="role-box">
-        <b>这台手机是谁？</b>
-        <button id="roleA" onclick="selectRole('A')">我是 A</button>
-        <button id="roleB" onclick="selectRole('B')">我是 B</button>
-      </div>
-      <p class="help">⭐ 永远表示“这台手机的我喜欢”；❤️ 表示另一位喜欢。两边都会同步看到。</p>
-      <button class="primary full" onclick="saveSetup()">保存设置</button>
-    </section>
-  </div>
+      <button class="plain-button" type="button" onclick="removeFormPhoto()">移除照片</button>
+    </div>
+    <p class="help">iPhone 点“选择/拍摄照片”可以直接拍照或从相册选。照片会上传到你自己的 Supabase Storage，两台手机同步。</p>
 
-  <div class="overlay" id="addOv">
-    <section class="modal add-modal">
-      <button class="close" onclick="closeOv('addOv')">×</button>
-      <h2>＋ 手机添加菜谱</h2>
-
-      <label class="field">菜名
-        <input id="newName" placeholder="例如：蒜香鸡翅">
+    <label class="field">菜名<input id="formName" placeholder="例如：蒜香鸡翅"></label>
+    <div class="two-col">
+      <label class="field">做法分类
+        <select id="formCategory">
+          <option>炒菜</option><option>炖煮</option><option>蒸菜</option>
+          <option>凉拌</option><option>煎炸</option><option>汤</option>
+        </select>
       </label>
-
-      <div class="two-col">
-        <label class="field">做法分类
-          <select id="newCategory">
-            <option>炒菜</option><option>炖煮</option><option>蒸菜</option>
-            <option>凉拌</option><option>煎炸</option><option>汤</option>
-          </select>
-        </label>
-        <label class="field">食材分类
-          <select id="newMeat">
-            <option>猪肉</option><option>牛肉</option><option>鸡肉</option><option>排骨</option>
-            <option>鱼虾</option><option>鸡蛋</option><option>素菜</option><option>汤</option><option>其他</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="two-col">
-        <label class="field">时间
-          <input id="newTime" value="20分钟">
-        </label>
-        <label class="field">难度
-          <select id="newDifficulty"><option>简单</option><option>中等</option><option>较难</option></select>
-        </label>
-      </div>
-
-      <label class="field">食材（每行一个，可直接写用量）
-        <textarea id="newIngredients" rows="5" placeholder="鸡翅 8个&#10;大蒜 6瓣&#10;葱 1根"></textarea>
+      <label class="field">食材分类
+        <select id="formMeat">
+          <option>猪肉</option><option>牛肉</option><option>鸡肉</option><option>排骨</option>
+          <option>鱼虾</option><option>鸡蛋</option><option>素菜</option><option>汤</option><option>其他</option>
+        </select>
       </label>
-
-      <label class="field">调料（每行一个）
-        <textarea id="newSeasonings" rows="4" placeholder="生抽 2勺&#10;蚝油 1勺&#10;盐 少许"></textarea>
+    </div>
+    <div class="two-col">
+      <label class="field">时间<input id="formTime" value="20分钟"></label>
+      <label class="field">难度
+        <select id="formDifficulty"><option>简单</option><option>中等</option><option>较难</option></select>
       </label>
+    </div>
 
-      <label class="field">步骤（每行一步）
-        <textarea id="newSteps" rows="6" placeholder="鸡翅划刀腌制20分钟&#10;锅中少油煎至两面金黄&#10;加入蒜末和调料焖熟"></textarea>
-      </label>
-
-      <button class="primary full" onclick="saveCustomRecipe()">保存并同步</button>
-    </section>
-  </div>
+    <label class="field">食材（每行一个，可写用量）
+      <textarea id="formIngredients" rows="5" placeholder="鸡翅 8个&#10;大蒜 6瓣&#10;葱 1根"></textarea>
+    </label>
+    <label class="field">调料（每行一个）
+      <textarea id="formSeasonings" rows="4" placeholder="生抽 2勺&#10;蚝油 1勺&#10;盐 少许"></textarea>
+    </label>
+    <label class="field">步骤（每行一步）
+      <textarea id="formSteps" rows="6" placeholder="鸡翅划刀腌制20分钟&#10;锅中少油煎至两面金黄&#10;加入蒜末和调料焖熟"></textarea>
+    </label>
+    <button class="primary full" id="saveRecipeBtn" onclick="saveRecipeForm()">保存并同步</button>
+  </section>
+</div>
 </div>
 
 <script src="./app.js"></script>
